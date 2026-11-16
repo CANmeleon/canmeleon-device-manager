@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Device Manager troubleshooting / 管理器故障排查
+    url: https://canmeleon.com/en/device-manager/faq/
+    about: Check detection, driver, update and recovery instructions.
+  - name: Firmware compatibility / 固件兼容问题
+    url: https://github.com/CANmeleon/canmeleon-usb-can-firmware/issues
+    about: Report CAN communication or software compatibility issues in the firmware repository.
