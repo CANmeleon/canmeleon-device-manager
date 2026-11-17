@@ -1,0 +1,10 @@
+.venv/
+.tools/
+.runtime/
+.cache/
+build/
+dist/
+__pycache__/
+.pytest_cache/
+*.pyc
+nuitka-crash-report.xml

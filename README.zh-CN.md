@@ -61,7 +61,13 @@ CANmeleon 设备管理器用于在 Windows 上连接支持的 USB-CAN/CAN FD 设
 
 **源码在哪里？**
 
-本仓库提供使用文档和软件发布包入口，许可信息以对应发布包为准。
+本仓库以 MIT 许可开放 OEM 界面层；原版 CDM 执行后端仍为独立分发的二进制。OEM 仅调用公开 CLI，不包含设备协议或固件打包实现。详见 [OEM 二次开发](docs/oem-development.md) 和 [许可边界](THIRD_PARTY_NOTICES.md)。
+
+## CDM_OEM 二次开发
+
+克隆仓库或解压对应 Release 的 Source ZIP，在 PowerShell 依次运行 `scripts/setup.ps1` 和 `scripts/run.ps1`。初始化会准备项目独立 Python 环境，并下载 `cdm-runtime.lock.json` 固定的原版 CDM。修改 `oem/branding.json` 和 UI 后，运行 `scripts/package.ps1` 生成安装包（需 Inno Setup 6.7.3）。
+
+第一版包含设备信息、固件切换、离线导入/预览/安装和终端电阻控制，暂不提供恢复、自检、V2 或自动更新。直接体验请下载 OEM Setup 附件；Source ZIP 用于开发，不是安装包。参见 [CLI 接入](docs/cli-api.md) 和 [维护发布规则](CONTRIBUTING.md)。
 
 ## 帮助与反馈
 

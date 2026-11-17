@@ -1,0 +1,11 @@
+{
+  "version": "0.8.6",
+  "tag": "CDM-0.8.6",
+  "cli_schema": 1,
+  "size": 98888650,
+  "sha256": "fc238cad06b69b8a95e02204ff563e49bcbe590494a4fa9680f228d8fed30b4c",
+  "urls": [
+    "https://gitee.com/ChengDu-KunHong/canmeleon-device-manager/releases/download/CDM-0.8.6/CANmeleon-device-manager-win64.zip",
+    "https://github.com/CANmeleon/canmeleon-device-manager/releases/download/CDM-0.8.6/CANmeleon-device-manager-win64.zip"
+  ]
+}

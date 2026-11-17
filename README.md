@@ -61,7 +61,13 @@ Downloading or importing updates the PC cache. Prepare and apply an installation
 
 **Where is the source code?**
 
-This repository provides documentation and links to distributed software packages. Refer to the relevant package for its licensing information.
+The OEM layer is available under MIT in this repository; the original CDM execution backend remains a separately distributed binary. The OEM UI calls the public CLI and does not contain device protocols or firmware packing logic. See [OEM development](docs/oem-development.md) and [license boundaries](THIRD_PARTY_NOTICES.md).
+
+## CDM_OEM development
+
+Clone this repository or extract the matching Release Source ZIP. Run `scripts/setup.ps1`, then `scripts/run.ps1` in PowerShell. Setup prepares project-local Python and the exact CDM runtime pinned by `cdm-runtime.lock.json`. Customize `oem/branding.json` and the UI, then run `scripts/package.ps1` to build an installer (Inno Setup 6.7.3 required).
+
+The first OEM version includes device information, firmware switching, offline firmware import/preview/install and termination control. Recovery, self-test, V2 and automatic updates are not included. Download the OEM Setup asset to try the compiled example; Source ZIPs are development inputs, not installers. See [CLI integration](docs/cli-api.md) and [contribution/release rules](CONTRIBUTING.md).
 
 ## Help and feedback
 
