@@ -55,6 +55,47 @@ def test_handshake_rejects_wrong_version(monkeypatch,tmp_path):
     with pytest.raises(CliError,match='does not match'):client.handshake()
 
 
+def test_networking_is_explicit_and_pins_download_version(tmp_path, monkeypatch):
+    exe = tmp_path / "cdm.exe"
+    exe.touch()
+    commands = []
+    def run(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(stdout=envelope({}), returncode=0)
+    monkeypatch.setattr("oem.client.subprocess.run", run)
+    client = Client(exe, tmp_path, "0.8.6")
+    client.info("d")
+    client.check_online("beta")
+    client.download("stable", "8.15.2")
+    assert "--offline" in commands[0] and "--verified-https" not in commands[0]
+    assert all("--verified-https" in cmd and "--offline" not in cmd for cmd in commands[1:])
+    assert commands[2][1:7] == ["releases", "download", "--channel", "stable", "--version", "8.15.2"]
+
+
+def test_uninstall_and_mode_responses_are_bound_to_selection(tmp_path, monkeypatch):
+    client = Client(tmp_path / "cdm.exe", tmp_path, "0.8.6")
+    monkeypatch.setattr(client, "call", lambda *a, **k: {"completion": "preview", "action": "uninstall",
+                        "uid": "uid", "device": "d", "firmware": {"id": "other"}})
+    with pytest.raises(CliError, match="uninstall preview"):
+        client.uninstall("d", "uid", "expected", preview=True)
+    monkeypatch.setattr(client, "call", lambda *a, **k: {"completion": "acknowledged", "mode": "wrong", "uid": "uid"})
+    with pytest.raises(CliError) as error:
+        client.set_mode("d", "uid", "requested")
+    assert error.value.code == "OUTCOME_UNKNOWN"
+
+
+def test_operation_lookup_checks_identity_and_hides_internal_details(tmp_path, monkeypatch):
+    client = Client(tmp_path / "cdm.exe", tmp_path, "0.8.6")
+    identifier = "1"*32
+    record = dict(schema_version=1, operation_id=identifier, ok=True, data={"completion": "verified", "layout": []})
+    monkeypatch.setattr(client, "call", lambda *a, **k: record)
+    assert client.operation(identifier) == "verified"
+    with pytest.raises(CliError):
+        client.operation("2"*32)
+    with pytest.raises(CliError):
+        client.operation("../invalid")
+
+
 @pytest.mark.parametrize('payload', [
     {'schema_version': True, 'ok': True, 'data': {}},
     {'schema_version': 1, 'ok': False, 'error': 'bad'},

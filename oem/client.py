@@ -13,7 +13,7 @@ class CliError(RuntimeError):
         self.code, self.operation_id = code, operation_id
 
 
-def parse_result(stdout: str, exit_code: int, writing=False) -> dict:
+def parse_result(stdout: str, exit_code: int, writing=False, expected_completion="verified") -> dict:
     try:
         result = json.loads(stdout)
         valid = (isinstance(result, dict) and type(result.get("schema_version")) is int and result.get("schema_version") == 1
@@ -32,7 +32,7 @@ def parse_result(stdout: str, exit_code: int, writing=False) -> dict:
     if exit_code != 0 or not isinstance(result.get("data"), dict):
         raise CliError("OUTCOME_UNKNOWN" if writing else "INVALID_RESPONSE", "CLI exit status or data is invalid.")
     data = result["data"]
-    if writing and data.get("completion") != "verified":
+    if writing and data.get("completion") != expected_completion:
         raise CliError("OUTCOME_UNKNOWN", "Device modification has not been verified.", result.get("operation_id"))
     return data
 
@@ -41,11 +41,12 @@ class Client:
     def __init__(self, exe: Path, cache: Path, version: str):
         self.exe, self.cache, self.version = Path(exe), Path(cache), version
 
-    def call(self, args: list[str], *, writing=False, timeout=300) -> dict:
+    def call(self, args: list[str], *, writing=False, timeout=300, online=False, expected_completion="verified") -> dict:
         if not self.exe.is_file():
             raise CliError("RUNTIME_MISSING", "Run scripts/setup.ps1 or reinstall this product.")
-        command = [str(self.exe), *map(str, args), "--json", "--offline", "--cache-dir", str(self.cache),
+        command = [str(self.exe), *map(str, args), "--json", "--cache-dir", str(self.cache),
                    "--timeout", str(timeout), "--wait", "90"]
+        command.append("--verified-https" if online else "--offline")
         # communicate waits for CDM's own bounded deadline. Never kill a write from the UI.
         try:
             completed = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -53,7 +54,10 @@ class Client:
                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except OSError as exc:
             raise CliError("RUNTIME_ERROR", str(exc)) from exc
-        return parse_result(completed.stdout, completed.returncode, writing)
+        result = parse_result(completed.stdout, completed.returncode, writing, expected_completion)
+        if writing:
+            self.last_operation_id = json.loads(completed.stdout).get("operation_id")
+        return result
 
     def handshake(self):
         data = self.call(["version"], timeout=30)
@@ -67,14 +71,46 @@ class Client:
     def info(self, device):
         return self.call(["device", "info", "--device", device])
 
-    def catalog(self, device=None):
-        args = ["firmware", "catalog"]
+    def catalog(self, device=None, channel="stable"):
+        args = ["firmware", "catalog", "--channel", channel]
         if device:
             args.extend(["--device", device])
         return self.call(args)["firmware"]
 
-    def import_zip(self, path):
-        return self.call(["releases", "import", "--file", str(path)])
+    def import_zip(self, path, channel="stable"):
+        return self.call(["releases", "import", "--file", str(path), "--channel", channel])
+
+    def check_online(self, channel):
+        return self.call(["releases", "check", "--channel", channel], online=True)
+
+    def download(self, channel, version):
+        return self.call(["releases", "download", "--channel", channel, "--version", version], online=True)
+
+    def operation(self, identifier):
+        if not re.fullmatch(r"[0-9a-f]{32}", identifier):
+            raise CliError("INVALID_ARGUMENT", "Invalid operation ID")
+        record = self.call(["operations", "show", "--id", identifier])
+        if record.get("schema_version") != 1 or record.get("operation_id") != identifier:
+            raise CliError("INVALID_RESPONSE", "Unexpected operation record")
+        return ((record.get("data") or {}).get("completion")
+                or (record.get("error") or {}).get("code") or "OUTCOME_UNKNOWN")
+
+    def set_mode(self, device, uid, mode):
+        data = self.call(["modes", "set", "--device", device, "--expect-uid", uid,
+                          "--mode", mode, "--yes"], writing=True, expected_completion="acknowledged")
+        if data.get("uid") != uid or data.get("mode") != mode:
+            raise CliError("OUTCOME_UNKNOWN", "Unmatched mode acknowledgement")
+        return data
+
+    def uninstall(self, device, uid, firmware, *, preview):
+        args = ["firmware", "uninstall", "--device", device, "--expect-uid", uid,
+                "--firmware", firmware, "--dry-run" if preview else "--yes"]
+        result = self.call(args, writing=not preview)
+        if preview and (result.get("completion") != "preview" or result.get("device") != device
+                or result.get("action") != "uninstall" or result.get("uid") != uid
+                or (result.get("firmware") or {}).get("id") != firmware):
+            raise CliError("INVALID_RESPONSE", "Unexpected uninstall preview")
+        return result
 
     def termination(self, device, channel, uid=None, enabled=None):
         args = ["termination", "get" if enabled is None else "set", "--device", device, "--channel", str(channel)]
@@ -86,9 +122,15 @@ class Client:
         return self.call(["firmware", "switch", "--device", device, "--expect-uid", uid,
                           "--firmware", firmware, "--yes"], writing=True)
 
-    def install(self, device, uid, firmware, version, plan_id=None):
+    def install(self, device, uid, firmware, version, plan_id=None, *, replace=None, target_slot=None, channel="stable"):
         args = ["firmware", "install", "--device", device, "--expect-uid", uid,
-                "--firmware", firmware, "--version", version]
+                "--firmware", firmware, "--version", version, "--channel", channel]
+        if replace and target_slot:
+            raise ValueError("Select a single installation target")
+        if replace:
+            args += ["--replace", replace]
+        if target_slot:
+            args += ["--target-slot", target_slot]
         args += ["--plan-id", plan_id, "--yes"] if plan_id else ["--dry-run"]
         result = self.call(args, writing=plan_id is not None)
         if plan_id is None:
@@ -96,7 +138,7 @@ class Client:
             if (not isinstance(plan, dict) or result.get("completion") != "preview"
                     or any(plan.get(k) != v for k, v in {
                         "device": device, "uid": uid, "firmware": firmware, "version": version,
-                        "preserve_other_firmware": True, "replace": None}.items())
+                        "preserve_other_firmware": True, "replace": replace, "target_slot": target_slot}.items())
                     or not re.fullmatch(r"[0-9a-f]{64}", str(plan.get("plan_id", "")))
                     or type(plan.get("size_bytes")) is not int or plan["size_bytes"] <= 0
                     or not plan.get("name") or not plan.get("firmware_version")):

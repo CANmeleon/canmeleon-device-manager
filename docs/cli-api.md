@@ -16,7 +16,16 @@ The executable is the complete pinned CDM runtime's `CANmeleon-device-manager.ex
 | Switch / 切换 | `firmware switch --device ID --expect-uid UID --firmware INSTALLED_ID --yes --json` |
 | Termination / 电阻 | `termination get/set --device ID --channel N`; set also requires `--expect-uid UID --state on/off --yes` |
 
-All calls use explicit argument arrays, hidden child windows, stdin=DEVNULL and captured UTF-8 output. The adapter adds `--json --offline --cache-dir ... --timeout 300 --wait 90`. The UI waits for CDM's own bounded task result rather than killing writes with an outer timeout.
+Calls use argument arrays, hidden child windows, UTF-8 JSON and an explicit cache directory. Device and local catalog calls use `--offline`. Only an explicit online check or download uses `--verified-https`.
+
+| 功能 / Action | Public CLI |
+| --- | --- |
+| 指定空槽 / Install in empty slot | Read `device info` → `empty_slots[].id`. Pass the same `--target-slot ID` to preview and execution. |
+| 替换 / Replace | Pass `--replace INSTALLED_ID` to both installation calls. |
+| 卸载 / Uninstall | `firmware uninstall --device ID --expect-uid UID --firmware INSTALLED_ID`, first with `--dry-run`, then with `--yes` after confirmation. |
+| 工作模式 / USB mode | Read `device info` → `modes`, then `modes set --device ID --expect-uid UID --mode MODE --yes`. An acknowledgement requires reconnection and inspection. |
+| 在线固件 / Online firmware | `releases check --channel stable`, then `releases download --channel stable --version VERSION`. The channel can also be `beta`. |
+| 操作记录 / Operation record | `operations show --id OPERATION_ID` returns a saved result. Refresh device state after an unknown result. |
 
 返回 envelope 包含 `schema_version=1`、`tool_version`、`operation_id`、`ok`、`data` 和 `error`。失败按 `error.code` 判断，不能匹配错误文本。写操作仅在 `completion=verified` 时显示已验证；无效响应、超时或无法确认结果不得显示成功。额外字段可忽略，必要字段缺失应报错。
 

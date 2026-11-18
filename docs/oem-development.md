@@ -61,6 +61,12 @@ The first installer wizard is English; the application supports Chinese and Engl
 
 ## 使用与故障处理 / Use and troubleshooting
 
+设备选择页每五秒刷新。连接后可按版本和兼容性筛选市场；双击已装固件或空槽，选择目标固件并核对预览。满槽时选择替换目标。卸载仅对未运行固件开放。在设备信息中可切换后端列出的 USB 模式，应答后重新连接核对。帮助中的操作编号查询可用于售后核查。
+
+The picker refreshes every five seconds while idle. Filter by version and compatibility. Double-click an occupied or empty slot to choose firmware and review the target. When full, select which firmware to replace. Switch away from a running image before uninstalling it. USB modes come from the connected device. Reconnect after a mode acknowledgement. Look up a recorded operation ID in Help.
+
+将 `branding.json` 的 `online_firmware` 设为 `false` 可隐藏在线入口。启用时仅在点击检查或确认下载后联网，支持 stable/beta。TLS 校验失败时可改用官方完整 ZIP。 / Set `online_firmware` to false to hide online firmware controls. Checking and downloading are explicit actions. If certificate verification fails, import the official ZIP.
+
 1. 在设备表中选择目标，点击“连接”（或双击行）。单台设备预选，多台设备须手动选择。连接前可浏览固件市场，连接后默认进入固件管理并自动查询兼容性。在“设备信息”中勾选通道后点击“应用设置”。/ Select a device and click Connect or double-click its row. A single device is highlighted. With multiple devices, select one explicitly. Browse the catalog before connecting. Connect to open firmware management and check compatibility. Under Device information, select channel termination states and apply changes.
 2. 导入官方完整固件 ZIP，选择兼容固件，检查预览和 UID 后确认安装。软件 ZIP 与固件 ZIP 不可混用。/ Import the complete official firmware ZIP, review compatibility and UID, then confirm the preview. Software and firmware ZIPs are different.
 3. 安装后检查已安装列表；需要时手动切换，安装不会自动切换。/ Verify the installed list; switching is a separate operation.

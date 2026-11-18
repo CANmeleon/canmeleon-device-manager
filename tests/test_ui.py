@@ -157,3 +157,61 @@ def test_catalog_merges_identical_import_but_keeps_versions(window, app, monkeyp
     wait(app, lambda: window.job is None)
     assert [f['version'] for f in window.catalog_rows] == ['8.15.2', '8.15.1']
     assert window.catalog.count() == 2
+
+
+@pytest.mark.parametrize("index, expected", [(0, {"replace": "f1"}), (1, {"target_slot": "slot-test"})])
+def test_slot_actions_bind_same_target_to_preview_and_execution(window, app, monkeypatch, index, expected):
+    info = window.client.info("device-a") | {"max_slots": 2, "empty_slots": [{"id": "slot-test", "capacity_kib": 96}]}
+    monkeypatch.setattr(window.client, "info", lambda device: info)
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    window.table.selectRow(index)
+    calls = []
+    def install(device, uid, firmware, version, plan_id=None, **options):
+        calls.append((uid, plan_id, options))
+        return {"plan": {"name": "GS USB", "firmware_version": version, "size_bytes": 4096, "plan_id": "abc"}}
+    monkeypatch.setattr(window.client, "install", install, raising=False)
+    monkeypatch.setattr(window, "confirm", lambda text: "GS USB" in text and "1"*32 in text)
+    window.preview_install()
+    wait(app, lambda: window.job is None)
+    assert calls == [("1"*32, None, expected), ("1"*32, "abc", expected)]
+
+
+@pytest.mark.parametrize("confirm", [True, False])
+def test_uninstall_only_nonrunning_firmware_after_confirmation(window, app, monkeypatch, confirm):
+    info = window.client.info("device-a")
+    info["firmware"].append({"id": "old", "name": "GS USB", "version": "8", "running": False})
+    monkeypatch.setattr(window.client, "info", lambda device: info)
+    calls = []
+    monkeypatch.setattr(window.client, "uninstall", lambda d, u, f, preview: calls.append((f, preview)), raising=False)
+    monkeypatch.setattr(window, "confirm", lambda _: confirm)
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    window.table.selectRow(0)
+    window.uninstall_selected()
+    assert not calls
+    window.table.selectRow(1)
+    window.uninstall_selected()
+    wait(app, lambda: window.job is None)
+    assert calls == ([("old", True), ("old", False)] if confirm else [("old", True)])
+
+
+def test_filters_and_hotplug_preserve_actual_targets(window, app, monkeypatch):
+    window.show()
+    monkeypatch.setattr(window.client, "devices", lambda: [{"id":"device-b"}, {"id":"device-a"}])
+    window.poll_devices()
+    wait(app, lambda: window.job is None)
+    assert window.selected_device()["id"] == "device-a"
+    monkeypatch.setattr(window.client, "devices", lambda: [{"id":"device-b"}, {"id":"device-c"}])
+    window.poll_devices()
+    wait(app, lambda: window.job is None)
+    assert window.selected_device() is None
+    window.device_table.selectRow(0)
+    row = window.catalog_rows[0]
+    monkeypatch.setattr(window.client, "catalog", lambda _: [row, dict(row, version="7", availability="Unavailable")])
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    window.versions.setCurrentIndex(window.versions.findData("7"))
+    assert window.selected_firmware()["version"] == "7" and not window.install_button.isEnabled()
+    window.compatible.setChecked(True)
+    assert not window.selected_firmware()

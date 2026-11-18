@@ -4,6 +4,7 @@
   "product_id": "Kunhong.CANmeleon.OEMDemo",
   "app_id": "5C70252A-90A0-48C4-A58A-D40767054977",
   "theme_color": "#007F78",
+  "online_firmware": true,
   "logo": "logo.svg",
   "icon": "icon.ico",
   "help_url": "https://canmeleon.com/en/device-manager/",
