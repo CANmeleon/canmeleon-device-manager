@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QThread, QTimer, QUrl
+from PySide6.QtCore import Qt, QSize, QThread, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QPixmap
-from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
+from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QCheckBox, QGroupBox, QTabWidget, QListWidgetItem, QHBoxLayout,
     QLabel, QListWidget, QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
     QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget, QHeaderView)
 
@@ -65,10 +65,10 @@ class Window(QMainWindow):
         self.setWindowIcon(QIcon(str(root / "oem" / brand["icon"])))
         central = QWidget()
         outer = QVBoxLayout(central)
-        outer.setContentsMargins(26, 20, 26, 20)
+        outer.setContentsMargins(12, 10, 12, 8)
         header = QHBoxLayout()
         logo = QLabel()
-        logo.setPixmap(QPixmap(str(root / "oem" / brand["logo"])).scaled(42, 42))
+        logo.setPixmap(QPixmap(str(root / "oem" / brand["logo"])).scaled(24, 24))
         header.addWidget(logo)
         title = QLabel(brand["name"])
         title.setObjectName("title")
@@ -83,48 +83,86 @@ class Window(QMainWindow):
                 pass
         header.addWidget(self.language)
         outer.addLayout(header)
-        selector = QHBoxLayout()
-        self.devices_combo = QComboBox()
-        self.devices_combo.setMinimumWidth(420)
-        selector.addWidget(self.devices_combo, 1)
-        selector.addWidget(self.button("刷新设备", "Refresh devices", self.refresh_devices))
-        selector.addWidget(self.button("读取设备", "Read device", self.read_device, "selected"))
-        outer.addLayout(selector)
-        body = QHBoxLayout()
-        self.nav = QListWidget()
-        self.nav.setFixedWidth(150)
-        self.pages = QStackedWidget()
         self.page_keys = brand["pages"]
-        for key in self.page_keys:
-            self.pages.addWidget(getattr(self, f"page_{key}")())
-        body.addWidget(self.nav)
-        body.addWidget(self.pages, 1)
-        outer.addLayout(body, 1)
+        self.device_rows = []
+        self.term_states = {}
+        self.checks = {}
+        self.flow = QStackedWidget()
+        outer.addWidget(self.flow, 1)
+        pick = QWidget()
+        self.pick_layout = QVBoxLayout(pick)
+        self.pick_layout.addWidget(self.label("选择设备", "Select device"))
+        controls = QHBoxLayout()
+        controls.addWidget(self.button("刷新", "Refresh", self.refresh_devices))
+        controls.addWidget(self.button("连接", "Connect", self.read_device, "selected"))
+        controls.addStretch()
+        self.pick_layout.addLayout(controls)
+        self.device_table = self.make_table(4)
+        self.device_table.itemSelectionChanged.connect(self.update_actions)
+        self.device_table.cellDoubleClicked.connect(lambda *_: self.read_device())
+        self.pick_layout.addWidget(self.device_table, 1)
+        self.flow.addWidget(pick)
+        manager = QWidget()
+        layout = QVBoxLayout(manager)
+        bar = QHBoxLayout()
+        self.identity = QLabel()
+        bar.addWidget(self.identity, 1)
+        bar.addWidget(self.button("刷新设备信息", "Refresh device info", self.read_device, "selected"))
+        bar.addWidget(self.button("断开连接", "Disconnect", self.refresh_devices))
+        layout.addLayout(bar)
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+        self.tab_names = []
+        for key, zh, en in [("firmware", "固件管理", "Firmware"), ("devices", "设备信息", "Device information")]:
+            if key in self.page_keys:
+                self.tabs.addTab(getattr(self, "page_" + key)(), zh)
+                self.tab_names.append((zh, en))
+        self.flow.addWidget(manager)
+        if "firmware" in self.page_keys:
+            self.market = self.create_market()
+            self.pick_layout.addWidget(self.market, 2)
+        if "help" in self.page_keys:
+            self.help_dialog = QMessageBox(self)
+            self.help_dialog.setStandardButtons(QMessageBox.StandardButton.Close)
+            self.help_dialog.addButton(self.button("复制诊断信息", "Copy diagnostics", self.copy_diagnostics, "always"),
+                                       QMessageBox.ButtonRole.ActionRole)
+            if brand.get("help_url"):
+                self.help_dialog.addButton(self.button("帮助网页", "Help website",
+                    lambda: QDesktopServices.openUrl(QUrl(brand["help_url"])), "always"), QMessageBox.ButtonRole.ActionRole)
+            header.insertWidget(2, self.button("帮助", "Help", self.show_help, "always"))
+        if not self.tab_names:
+            help_page = QWidget()
+            help_layout = QVBoxLayout(help_page)
+            help_layout.addWidget(self.label("关于与帮助", "About & help"))
+            help_layout.addWidget(QLabel(f"{brand['name']} {VERSION} · CDM {client.version}"))
+            help_layout.addStretch()
+            self.flow.addWidget(help_page)
+            self.flow.setCurrentWidget(help_page)
         self.status = QLabel()
         self.status.setWordWrap(True)
-        self.status.setTextInteractionFlags(self.status.textInteractionFlags())
         outer.addWidget(self.status)
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
-        self.progress.setFixedHeight(5)
+        self.progress.setFixedHeight(4)
         self.progress.hide()
         outer.addWidget(self.progress)
         self.setCentralWidget(central)
-        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
-        self.devices_combo.currentIndexChanged.connect(self.selection_changed)
         self.language.currentIndexChanged.connect(self.retranslate)
-        color = brand["theme_color"]
-        self.setStyleSheet(f"""
-            QMainWindow {{background:#F3F7F8;}} QWidget {{font-family:'Segoe UI','Microsoft YaHei';font-size:13px;color:#19363B;}}
-            QLabel#title {{font-size:24px;font-weight:600;}} QPushButton {{background:{color};color:white;border:0;border-radius:6px;padding:9px 13px;}}
-            QPushButton:disabled {{background:#DCE5E6;color:#87999D;}} QComboBox {{background:white;padding:8px;border:1px solid #CCDCDE;border-radius:6px;}}
-            QListWidget,QTextEdit,QTableWidget {{background:white;border:1px solid #DCE5E6;border-radius:7px;}}
-            QListWidget::item {{padding:15px;}} QListWidget::item:selected {{background:{color};color:white;}}
-            QHeaderView::section {{background:#EAF1F2;padding:8px;border:0;}} QProgressBar::chunk {{background:{color};}}
-        """)
+        self.setStyleSheet("QLabel#title {font-weight:bold;font-size:16px} "
+                           "QGroupBox {font-weight:bold} QListWidget::item:selected, "
+                           "QTableWidget::item:selected {background:" + brand["theme_color"] + ";color:white}")
         self.retranslate()
-        self.nav.setCurrentRow(0)
         QTimer.singleShot(0, self.initialize)
+
+    @staticmethod
+    def make_table(columns):
+        table = QTableWidget(0, columns)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().hide()
+        return table
 
     def tr2(self, zh, en):
         return en if self.language.currentIndex() == 1 else zh
@@ -146,96 +184,115 @@ class Window(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.addWidget(self.label("设备信息与通道配置", "Device information and channels"))
-        self.info_text = QTextEdit()
-        self.info_text.setReadOnly(True)
-        self.info_text.setMaximumHeight(260)
+        self.info_text = QLabel()
+        self.info_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.info_text)
-        form = QHBoxLayout()
-        self.channel = QComboBox()
-        form.addWidget(self.channel)
-        form.addWidget(self.button("读取电阻", "Read termination", self.get_termination, "channel"))
-        form.addWidget(self.button("开启电阻", "Enable termination", lambda: self.set_termination(True), "write_channel"))
-        form.addWidget(self.button("关闭电阻", "Disable termination", lambda: self.set_termination(False), "write_channel"))
-        layout.addLayout(form)
+        self.term_group = QGroupBox()
+        term = QVBoxLayout(self.term_group)
+        self.channel_layout = QHBoxLayout()
+        term.addLayout(self.channel_layout)
+        controls = QHBoxLayout()
+        controls.addWidget(self.button("刷新状态", "Refresh states", self.get_termination, "identified"))
+        controls.addWidget(self.button("应用设置", "Apply changes", self.set_termination, "write_channel"))
+        controls.addStretch()
+        term.addLayout(controls)
         self.term_status = QLabel()
-        layout.addWidget(self.term_status)
-        layout.addWidget(self.label("通道号对应设备物理 CH1、CH2 等。设置后会回读确认；不支持的通道不会强行设置。",
-                                   "Channel numbers refer to physical CH1, CH2, etc. Settings are read back; unsupported operations are refused."))
+        term.addWidget(self.term_status)
+        layout.addWidget(self.term_group)
         layout.addStretch()
         return page
 
     def page_firmware(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(self.label("已安装固件", "Installed firmware"))
-        self.table = QTableWidget(0, 3)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.firmware_layout = QVBoxLayout(page)
+        self.installed_group = QGroupBox()
+        layout = QVBoxLayout(self.installed_group)
+        self.table = self.make_table(3)
         self.table.itemSelectionChanged.connect(self.update_actions)
         layout.addWidget(self.table)
-        layout.addWidget(self.button("切换到选中固件", "Switch to selected firmware", self.switch_firmware, "firmware"))
         row = QHBoxLayout()
-        row.addWidget(self.button("导入完整固件 ZIP", "Import firmware ZIP", self.import_firmware))
-        row.addWidget(self.button("刷新可用固件", "Refresh catalog", self.refresh_catalog, "identified"))
+        row.addWidget(self.button("切换到选中固件", "Switch to selected firmware", self.switch_firmware, "firmware"))
+        row.addStretch()
         layout.addLayout(row)
-        self.catalog = QComboBox()
-        self.catalog.currentIndexChanged.connect(self.catalog_changed)
-        layout.addWidget(self.catalog)
+        self.firmware_layout.addWidget(self.installed_group, 1)
+        return page
+
+    def create_market(self):
+        box = QGroupBox()
+        layout = QVBoxLayout(box)
+        row = QHBoxLayout()
+        row.addWidget(self.button("导入离线固件包", "Import offline firmware", self.import_firmware))
+        row.addWidget(self.button("刷新固件市场", "Refresh catalog", self.refresh_catalog))
+        row.addStretch()
+        layout.addLayout(row)
+        self.catalog = QListWidget()
+        self.catalog.setViewMode(QListWidget.ViewMode.IconMode)
+        self.catalog.setMovement(QListWidget.Movement.Static)
+        self.catalog.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.catalog.setGridSize(QSize(178, 60))
+        self.catalog.setWordWrap(True)
+        self.catalog.setUniformItemSizes(True)
+        self.catalog.setStyleSheet("QListWidget::item {border:1px solid #ccd1d4; border-radius:4px; margin:2px;}")
+        self.catalog.currentRowChanged.connect(self.catalog_changed)
+        layout.addWidget(self.catalog, 1)
         self.reason = QLabel()
         self.reason.setWordWrap(True)
         layout.addWidget(self.reason)
-        layout.addWidget(self.button("预览安装…", "Preview installation…", self.preview_install, "catalog"))
-        layout.addWidget(self.label("安装前检查设备 UID 和固件版本。安装不会自动切换运行；空间不足时请使用原版 CDM 管理固件。",
-                                   "Verify UID and firmware version before installing. Installation does not switch the running firmware. Use the original CDM if space is insufficient."))
-        return page
+        self.install_button = self.button("安装选中固件…", "Install selected firmware…", self.preview_install, "catalog")
+        layout.addWidget(self.install_button, 0, Qt.AlignmentFlag.AlignLeft)
+        return box
 
-    def page_help(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        self.help_text = QTextEdit()
-        self.help_text.setReadOnly(True)
-        layout.addWidget(self.help_text)
-        layout.addWidget(self.button("复制诊断信息", "Copy diagnostics", self.copy_diagnostics, "always"))
-        if self.brand.get("help_url"):
-            layout.addWidget(self.button("打开帮助网页", "Open help website",
-                lambda: QDesktopServices.openUrl(QUrl(self.brand["help_url"])), "always"))
-        return page
+    def show_help(self):
+        self.help_dialog.setWindowTitle(self.tr2("帮助", "Help"))
+        self.help_dialog.setText(f"{self.brand['name']} {VERSION}  ·  CDM {self.client.version}\n\n" + self.tr2(
+            "选择设备后点击连接。在固件市场选择固件可查看安装预览。写入时请保持供电，结果未知时请重新查询设备。",
+            "Select a device and connect. Choose firmware in the catalog to preview installation. Keep power connected during writes. Query the device again if the result is unknown."))
+        self.help_dialog.exec()
 
     def retranslate(self):
         for obj, zh, en in self.texts:
             obj.setText(self.tr2(zh, en))
-        current = self.nav.currentRow()
-        self.nav.clear()
-        names = {"devices": ("设备", "Devices"), "firmware": ("固件", "Firmware"), "help": ("关于与帮助", "About & help")}
-        self.nav.addItems([self.tr2(*names[key]) for key in self.page_keys])
-        self.nav.setCurrentRow(max(0, current))
-        if hasattr(self, "table"):
+        for index, names in enumerate(self.tab_names):
+            self.tabs.setTabText(index, self.tr2(*names))
+        self.device_table.setHorizontalHeaderLabels([self.tr2(*names) for names in
+            [("设备", "Device"), ("USB 节点", "USB node"), ("状态", "State"), ("驱动", "Driver")]])
+        self.render_devices()
+        if hasattr(self, "term_group"):
+            self.term_group.setTitle(self.tr2("终端电阻", "Termination"))
+        if hasattr(self, "market"):
+            self.market.setTitle(self.tr2("固件市场", "Firmware catalog"))
+            self.installed_group.setTitle(self.tr2("已安装固件", "Installed firmware"))
             self.table.setHorizontalHeaderLabels([self.tr2("固件", "Firmware"), self.tr2("版本", "Version"), self.tr2("状态", "State")])
             self.render_firmware()
-        if hasattr(self, "help_text"):
-            self.help_text.setPlainText(self.tr2(
-                f"{self.brand['name']} {VERSION}\nCDM {self.client.version} · CLI schema 1\n\n先刷新并选择设备，再读取设备信息。固件使用官方完整 ZIP 离线导入。\n\n写入期间保持供电、不要拔线或关闭程序。结果未知时先重新查询设备，切勿直接重试安装。\n\n本版不提供自检、恢复、V2、量产或软件自动更新。请使用完整新版安装包升级。\n\n修改 oem/branding.json 可定制品牌；页面位于 oem/ui.py，设备执行通过公开 CLI。源码 MIT 许可不覆盖后端及第三方组件。",
-                f"{self.brand['name']} {VERSION}\nCDM {self.client.version} · CLI schema 1\n\nRefresh, select a device, then read its information. Import a complete official firmware ZIP for offline installation.\n\nKeep power connected during writes. Do not unplug or close the program. If the outcome is unknown, query the device before considering another installation.\n\nSelf-test, recovery, V2, production and automatic software updates are not included. Upgrade using the complete installer.\n\nCustomize oem/branding.json and oem/ui.py. Device operations use the public CLI. The source MIT license excludes the runtime and third-party components."))
+            self.render_catalog()
         self.settings.parent.mkdir(parents=True, exist_ok=True)
         self.settings.write_text(json.dumps({"language": self.language.currentIndex()}), encoding="utf-8")
         self.update_actions()
 
+    def selected_device(self):
+        index = self.device_table.currentRow()
+        if 0 <= index < len(self.device_rows):
+            return self.device_rows[index]
+
     def update_actions(self):
-        selected = self.devices_combo.currentData() is not None
+        selected = self.selected_device()
         identified = bool(self.device and self.uid)
         can_write = identified and not self.uncertain
+        index = self.table.currentRow() if hasattr(self, "table") else -1
+        row = self.selected_firmware()
         for button, needs in self.actions:
-            allowed = {"always": True, "ready": self.ready, "selected": self.ready and selected,
-                "identified": self.ready and identified, "channel": identified and self.channels > 0,
-                "write_channel": can_write and self.channels > 0,
-                "firmware": can_write and hasattr(self, "table") and self.table.currentRow() >= 0,
-                "catalog": can_write and hasattr(self, "catalog") and self.catalog.currentData() is not None
-                    and self.catalog.currentData().get("availability") == "Available"}.get(needs, False)
+            allowed = {"always": True, "ready": self.ready,
+                "selected": self.ready and selected and selected.get("connectable", True),
+                "identified": identified, "write_channel": can_write and bool(self.changed_channels()),
+                "firmware": can_write and 0 <= index < len(self.firmware_rows) and not self.firmware_rows[index]["running"],
+                "catalog": can_write and row and row.get("availability") == "Available"}.get(needs)
             button.setEnabled(bool(allowed) and self.job is None)
-        self.devices_combo.setEnabled(self.ready and self.job is None)
-        if hasattr(self, "catalog"):
+        self.device_table.setEnabled(self.ready and self.job is None)
+        self.language.setEnabled(self.job is None)
+        for channel, box in self.checks.items():
+            box.setEnabled(can_write and channel in self.term_states and self.job is None)
+        if hasattr(self, "market"):
+            self.install_button.setVisible(identified)
             self.catalog.setEnabled(self.job is None)
 
     def start(self, action, success, writing=False):
@@ -267,6 +324,8 @@ class Window(QMainWindow):
         if writing or code in ("OUTCOME_UNKNOWN", "TIMEOUT"):
             self.uncertain = True
         self.plan = None
+        if hasattr(self, "term_status"):
+            self.term_status.clear()
         self.diagnostic = {"ui_version": VERSION, "cdm_version": self.client.version, "code": code,
                            "message": str(error), "device": self.device, "uid": self.uid,
                            "operation_id": getattr(error, "operation_id", None)}
@@ -276,52 +335,84 @@ class Window(QMainWindow):
     def initialize(self):
         def ready(_):
             self.ready = True
-            self.refresh_devices()
+            if self.tab_names:
+                self.refresh_devices()
         self.start(self.client.handshake, ready)
 
-    def selection_changed(self):
+    def clear_session(self):
         self.device = self.uid = self.plan = None
-        self.channels = 0
         self.firmware_rows = []
-        if hasattr(self, "info_text"):
-            self.info_text.clear()
-            self.channel.clear()
-            self.term_status.clear()
-        if hasattr(self, "catalog"):
+        self.catalog_rows = []
+        self.channels = 0
+        self.term_states.clear()
+        self.identity.clear()
+        for box in self.checks.values():
+            self.channel_layout.removeWidget(box)
+            box.deleteLater()
+        self.checks.clear()
+        if hasattr(self, "market"):
             self.catalog.clear()
             self.render_firmware()
+            self.pick_layout.addWidget(self.market, 2)
+        self.flow.setCurrentIndex(0)
         self.update_actions()
 
+    def render_devices(self):
+        self.device_table.setRowCount(len(self.device_rows))
+        for index, row in enumerate(self.device_rows):
+            name = row.get("product_name") or row.get("name") or row["id"]
+            state = self.tr2("可连接", "Ready") if row.get("connectable", True) else self.tr2("不可连接", "Unavailable")
+            for column, value in enumerate((name, row.get("usb_node_label") or row.get("location"), state,
+                                            row.get("driver_version") or row.get("driver_status"))):
+                self.device_table.setItem(index, column, QTableWidgetItem(str(value or "—")))
+
     def refresh_devices(self):
-        previous = self.devices_combo.currentData()
-        self.selection_changed()
+        self.clear_session()
+        self.device_rows = []
+        self.render_devices()
         def done(rows):
-            self.devices_combo.clear()
-            for row in rows:
-                name = row.get("product_name") or row.get("name") or row.get("device_type") or row["id"]
-                self.devices_combo.addItem(f"{name} · {row.get('usb_node_label') or row.get('location') or row['id']}", row["id"])
-            self.devices_combo.setCurrentIndex(self.devices_combo.findData(previous) if previous else -1)
-            self.status.setText(self.tr2(f"找到 {len(rows)} 台设备，请选择后读取。", f"Found {len(rows)} device(s). Select one and read it."))
+            self.device_rows = rows
+            self.render_devices()
+            if len(rows) == 1:
+                self.device_table.selectRow(0)
+            self.status.setText(self.tr2(f"发现 {len(rows)} 台设备", f"Found {len(rows)} device(s)"))
+            if hasattr(self, "market"):
+                self.refresh_catalog()
         self.start(self.client.devices, done)
 
     def read_device(self):
-        device = self.devices_combo.currentData()
-        if not device:
+        row = self.selected_device()
+        if not row or not row.get("connectable", True) or self.job:
             return
-        self.selection_changed()
+        device = row["id"]
+        tab = self.tabs.currentIndex() if self.uid else 0
+        expected_uid = self.uid
+        self.clear_session()
         def done(data):
             view = device_view(data)
+            if not view["uid"] or (expected_uid and expected_uid != view["uid"]):
+                raise CliError("TARGET_MISMATCH", "Device identity changed")
             self.device, self.uid, self.channels = device, view["uid"], view["channels"]
             self.uncertain = False
             self.firmware_rows = view["firmware"]
-            if hasattr(self, "info_text"):
-                current = next((row for row in self.firmware_rows if row["running"]), {})
-                self.info_text.setPlainText(f"UID: {self.uid or '—'}\n{self.tr2('通道', 'Channels')}: {self.channels or '—'}\n{self.tr2('当前固件', 'Running firmware')}: {current.get('name', '—')} {current.get('version', '')}")
-                self.channel.clear()
-                self.channel.addItems([f"CH{i}" for i in range(1, self.channels + 1)])
-            if hasattr(self, "table"):
+            self.identity.setText(f"{row.get('name') or device}    UID: {self.uid}")
+            self.flow.setCurrentIndex(1)
+            self.tabs.setCurrentIndex(tab)
+            if hasattr(self, "term_group"):
+                running = next((f for f in self.firmware_rows if f["running"]), {})
+                self.info_text.setText(f"UID: {self.uid}    ·    {self.channels} CH    ·    {running.get('name', '—')} {running.get('version', '')}")
+                for ch in range(1, self.channels + 1):
+                    box = QCheckBox(f"CH{ch}")
+                    self.checks[ch] = box
+                    self.channel_layout.addWidget(box)
+                    box.stateChanged.connect(self.update_actions)
+                self.term_status.clear()
+            if hasattr(self, "market"):
+                self.firmware_layout.addWidget(self.market, 2)
                 self.render_firmware()
-                self.refresh_catalog()
+                self.refresh_catalog(after=self.get_termination)
+            else:
+                self.get_termination()
         self.start(lambda: self.client.info(device), done)
 
     def render_firmware(self):
@@ -330,35 +421,54 @@ class Window(QMainWindow):
             for j, text in enumerate([row["name"], row["version"], self.tr2("运行中", "Running") if row["running"] else self.tr2("已安装", "Installed")]):
                 self.table.setItem(i, j, QTableWidgetItem(str(text)))
 
-    def refresh_catalog(self):
+    def selected_firmware(self):
+        index = self.catalog.currentRow() if hasattr(self, "catalog") else -1
+        return self.catalog_rows[index] if 0 <= index < len(self.catalog_rows) else None
+
+    def refresh_catalog(self, checked=False, *, after=None):
         device = self.device
-        if not device:
-            return
         def done(rows):
             self.catalog_rows = rows
-            self.catalog.clear()
-            for row in rows:
-                self.catalog.addItem(f"{row['name']} · {row['version']} · {row['availability']}", row)
-            self.catalog_changed()
+            self.render_catalog()
+            if after:
+                after()
         self.start(lambda: self.client.catalog(device), done)
+
+    def render_catalog(self):
+        index = self.catalog.currentRow()
+        self.catalog.clear()
+        for row in self.catalog_rows:
+            item = QListWidgetItem(f"{row['name']}\n{row['version']}")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.catalog.addItem(item)
+        if self.catalog_rows:
+            self.catalog.setCurrentRow(min(max(0, index), len(self.catalog_rows)-1))
 
     def catalog_changed(self):
         self.plan = None
-        row = self.catalog.currentData()
-        self.reason.setText(str(row.get("reason") or "") if row else self.tr2("请导入固件包或读取设备。", "Import a firmware ZIP or read the device."))
+        row = self.selected_firmware() or {}
+        key = self.tr2("summary_zh", "summary_en")
+        summary = (row.get("presentation") or {}).get(key, "")
+        if not self.uid:
+            state = self.tr2("连接设备后确认兼容性", "Connect a device to check compatibility")
+        elif row.get("availability") == "Available":
+            state = self.tr2("可安装", "Available")
+        else:
+            state = row.get("reason") or self.tr2("不可安装", "Unavailable")
+        self.reason.setText(f"{state}  ·  {summary}" if summary else state)
         self.update_actions()
 
     def import_firmware(self):
         path, _ = QFileDialog.getOpenFileName(self, self.tr2("选择完整固件发布包", "Select complete firmware release"), "", "ZIP (*.zip)")
         if path:
-            self.start(lambda: self.client.import_zip(path), lambda _: self.refresh_catalog() if self.device else None)
+            self.start(lambda: self.client.import_zip(path), lambda _: self.refresh_catalog())
 
     def confirm(self, text):
         return QMessageBox.question(self, self.tr2("确认设备操作", "Confirm device operation"), text,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
 
     def preview_install(self):
-        row = self.catalog.currentData()
+        row = self.selected_firmware()
         if not row or not self.uid:
             return
         device, uid = self.device, self.uid
@@ -384,18 +494,47 @@ class Window(QMainWindow):
             self.start(lambda: self.client.switch(device, uid, row["id"]), lambda _: self.read_device(), writing=True)
 
     def get_termination(self):
-        device, channel = self.device, self.channel.currentIndex() + 1
-        self.start(lambda: self.client.termination(device, channel), self.show_termination)
+        if not self.checks or not self.device:
+            return
+        device = self.device
+        channels = tuple(self.checks)
+        self.term_states.clear()
+        self.term_status.setText(self.tr2("读取中…", "Reading…"))
+        def read():
+            states = {}
+            for ch in channels:
+                value = self.client.termination(device, ch)
+                if value.get("channel") != ch or type(value.get("enabled")) is not bool:
+                    raise CliError("INVALID_RESPONSE", "Unexpected termination response")
+                states[ch] = value["enabled"]
+            return states
+        def done(states):
+            self.term_states = states
+            for ch, enabled in states.items():
+                self.checks[ch].setChecked(enabled)
+            self.term_status.setText(self.tr2("已读取设备状态", "Device states read"))
+        self.start(read, done)
 
-    def show_termination(self, data):
-        state = self.tr2("开启", "Enabled") if data["enabled"] else self.tr2("关闭", "Disabled")
-        self.term_status.setText(f"CH{data['channel']} · {state}")
+    def changed_channels(self):
+        return {ch: box.isChecked() for ch, box in self.checks.items()
+                if ch in self.term_states and self.term_states[ch] != box.isChecked()}
 
-    def set_termination(self, enabled):
-        device, uid, channel = self.device, self.uid, self.channel.currentIndex() + 1
-        state = self.tr2("开启", "Enable") if enabled else self.tr2("关闭", "Disable")
-        if self.confirm(f"UID: {uid}\nCH{channel} · {state}"):
-            self.start(lambda: self.client.termination(device, channel, uid, enabled), self.show_termination, writing=True)
+    def set_termination(self):
+        changes = self.changed_channels()
+        device, uid = self.device, self.uid
+        if not changes or not uid or self.uncertain:
+            return
+        lines = [f"CH{ch} · " + (self.tr2("开启", "Enabled") if enabled else self.tr2("关闭", "Disabled"))
+                 for ch, enabled in changes.items()]
+        if not self.confirm("\n".join([f"UID: {uid}", *lines])):
+            return
+        def apply():
+            for ch, enabled in changes.items():
+                self.client.termination(device, ch, uid, enabled)
+                actual = self.client.termination(device, ch)
+                if actual.get("channel") != ch or actual.get("enabled") is not enabled:
+                    raise CliError("OUTCOME_UNKNOWN", f"CH{ch}: readback mismatch")
+        self.start(apply, lambda _: self.get_termination(), writing=True)
 
     def copy_diagnostics(self):
         QApplication.clipboard().setText(json.dumps(self.diagnostic or {"ui_version": VERSION, "cdm_version": self.client.version}, ensure_ascii=False, indent=2))

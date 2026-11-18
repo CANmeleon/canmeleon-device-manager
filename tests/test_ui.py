@@ -10,6 +10,8 @@ from oem.ui import Window, ERROR_HELP
 
 class DemoClient:
     version='0.8.6'
+    def termination(self, device, channel):
+        return {'channel': channel, 'enabled': False}
     def handshake(self):return {'version':self.version}
     def devices(self):return [{'id':'device-a','name':'Demo X2','location':'USB(3)'}]
     def info(self,device):return {'uid':'1'*32,'overview':{'license':{'max_channels_can':2}},'firmware':[{'id':'f1','name':'KCAN X4','version':'8.15.2','running':True}]}
@@ -39,19 +41,19 @@ def window(app,tmp_path):
     win.close()
 
 
-def test_no_automatic_device_selection(window,app):
-    assert window.devices_combo.currentIndex()==-1 and window.uid is None
-    window.devices_combo.setCurrentIndex(0);window.read_device()
+def test_single_candidate_requires_connect_then_opens_firmware(window,app):
+    assert window.device_table.currentRow()==0 and window.uid is None
+    window.read_device()
     wait(app,lambda:window.job is None)
-    assert window.uid=='1'*32 and window.channel.count()==2
+    assert window.uid=='1'*32 and len(window.checks)==2
     assert window.table.rowCount()==1
     window.language.setCurrentIndex(1)
-    assert window.nav.item(0).text()=='Devices'
+    assert window.tabs.tabText(window.tabs.currentIndex())=='Firmware'
     assert window.table.horizontalHeaderItem(0).text()=='Firmware'
 
 
 def test_unknown_result_disables_writes_until_read(window,app):
-    window.devices_combo.setCurrentIndex(0);window.read_device();wait(app,lambda:window.job is None)
+    window.read_device();wait(app,lambda:window.job is None)
     window.failed(CliError('OUTCOME_UNKNOWN','test'),True);window.update_actions()
     assert window.uncertain
     assert all(not b.isEnabled() for b,need in window.actions if need in ('write_channel','catalog','firmware'))
@@ -70,7 +72,7 @@ def test_busy_operation_blocks_close_and_duplicate(window,app):
 
 
 def test_failed_refresh_cannot_reuse_previous_identity(window,app,monkeypatch):
-    window.devices_combo.setCurrentIndex(0);window.read_device();wait(app,lambda:window.job is None)
+    window.read_device();wait(app,lambda:window.job is None)
     def disconnected(*args): raise CliError('TARGET_NOT_FOUND','disconnected')
     monkeypatch.setattr(window.client,'info',disconnected)
     window.read_device();wait(app,lambda:window.job is None)
@@ -80,7 +82,7 @@ def test_failed_refresh_cannot_reuse_previous_identity(window,app,monkeypatch):
 
 @pytest.mark.parametrize('confirm',[False,True])
 def test_install_requires_preview_then_confirmation(window,app,monkeypatch,confirm):
-    window.devices_combo.setCurrentIndex(0);window.read_device();wait(app,lambda:window.job is None)
+    window.read_device();wait(app,lambda:window.job is None)
     calls=[]
     def install(device,uid,firmware,version,plan_id=None):
         calls.append((device,uid,firmware,version,plan_id))
@@ -95,14 +97,14 @@ def test_install_requires_preview_then_confirmation(window,app,monkeypatch,confi
 
 
 def test_write_timeout_never_retries(window,app,monkeypatch):
-    window.devices_combo.setCurrentIndex(0);window.read_device();wait(app,lambda:window.job is None)
+    window.read_device();wait(app,lambda:window.job is None)
     calls=[]
     def termination(*args):
         calls.append(args)
         raise CliError('TIMEOUT','simulated write interruption')
     monkeypatch.setattr(window.client,'termination',termination,raising=False)
     monkeypatch.setattr(window,'confirm',lambda _:True)
-    window.set_termination(True);wait(app,lambda:window.job is None)
+    window.checks[1].setChecked(True);window.set_termination();wait(app,lambda:window.job is None)
     assert len(calls)==1 and window.uncertain
     assert all(not b.isEnabled() for b,need in window.actions if need=='write_channel')
 
@@ -114,3 +116,35 @@ def test_error_guidance_is_bilingual(window,code):
         window.failed(CliError(code,'technical detail'))
         assert ERROR_HELP[code][language] in window.status.text()
         assert 'technical detail' not in window.status.text()
+
+def test_disconnect_clears_device_and_multidevice_requires_selection(window, app, monkeypatch):
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    monkeypatch.setattr(window.client, 'devices', lambda: [{'id': 'a'}, {'id': 'b'}])
+    window.refresh_devices()
+    wait(app, lambda: window.job is None)
+    assert window.flow.currentIndex() == 0 and window.uid is None
+    assert window.device_table.currentRow() == -1
+    assert window.catalog.count() == 1 and window.install_button.isHidden()
+
+
+def test_partial_channel_apply_stops_until_fresh_read(window, app, monkeypatch):
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    writes = []
+    def write(device, channel, uid=None, enabled=None):
+        if uid is None:
+            return {"channel": channel, "enabled": True}
+        writes.append((channel, uid, enabled))
+        if channel == 2:
+            raise CliError('TIMEOUT', 'unknown result')
+    monkeypatch.setattr(window.client, 'termination', write)
+    monkeypatch.setattr(window, 'confirm', lambda _: True)
+    for box in window.checks.values():
+        box.setChecked(True)
+    window.set_termination()
+    wait(app, lambda: window.job is None)
+    assert writes == [(1, '1'*32, True), (2, '1'*32, True)]
+    assert window.uncertain
+    window.set_termination()
+    assert len(writes) == 2

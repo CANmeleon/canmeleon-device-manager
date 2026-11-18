@@ -61,7 +61,7 @@ The first installer wizard is English; the application supports Chinese and Engl
 
 ## 使用与故障处理 / Use and troubleshooting
 
-1. 刷新，明确选择设备并读取信息；不能把列表第一台默认为目标。/ Refresh, explicitly select a device and read it.
+1. 在设备表中选择目标，点击“连接”（或双击行）。单台设备预选，多台设备须手动选择。连接前可浏览固件市场，连接后默认进入固件管理并自动查询兼容性。在“设备信息”中勾选通道后点击“应用设置”。/ Select a device and click Connect or double-click its row. A single device is highlighted. With multiple devices, select one explicitly. Browse the catalog before connecting. Connect to open firmware management and check compatibility. Under Device information, select channel termination states and apply changes.
 2. 导入官方完整固件 ZIP，选择兼容固件，检查预览和 UID 后确认安装。软件 ZIP 与固件 ZIP 不可混用。/ Import the complete official firmware ZIP, review compatibility and UID, then confirm the preview. Software and firmware ZIPs are different.
 3. 安装后检查已安装列表；需要时手动切换，安装不会自动切换。/ Verify the installed list; switching is a separate operation.
 4. 写入时保持供电与 USB 连接。超时或未知结果先刷新读取，不自动重试。/ Keep USB and power connected. Query state after timeout/unknown outcome; never retry automatically.

@@ -67,8 +67,11 @@ class Client:
     def info(self, device):
         return self.call(["device", "info", "--device", device])
 
-    def catalog(self, device):
-        return self.call(["firmware", "catalog", "--device", device])["firmware"]
+    def catalog(self, device=None):
+        args = ["firmware", "catalog"]
+        if device:
+            args.extend(["--device", device])
+        return self.call(args)["firmware"]
 
     def import_zip(self, path):
         return self.call(["releases", "import", "--file", str(path)])
