@@ -159,6 +159,17 @@ def test_catalog_merges_identical_import_but_keeps_versions(window, app, monkeyp
     assert window.catalog.count() == 2
 
 
+def test_help_exposes_action_buttons_in_both_languages(window, app):
+    from PySide6.QtWidgets import QPushButton
+    window.help_dialog.show()
+    for index, labels in enumerate([{"查询操作结果", "复制诊断信息", "关闭"}, {"Look up operation", "Copy diagnostics", "Close"}]):
+        window.language.setCurrentIndex(index)
+        app.processEvents()
+        visible = {b.text() for b in window.help_dialog.findChildren(QPushButton) if b.isVisible() and b.isEnabled()}
+        assert labels <= visible
+    window.help_dialog.close()
+
+
 @pytest.mark.parametrize("index, expected", [(0, {"replace": "f1"}), (1, {"target_slot": "slot-test"})])
 def test_slot_actions_bind_same_target_to_preview_and_execution(window, app, monkeypatch, index, expected):
     info = window.client.info("device-a") | {"max_slots": 2, "empty_slots": [{"id": "slot-test", "capacity_kib": 96}]}

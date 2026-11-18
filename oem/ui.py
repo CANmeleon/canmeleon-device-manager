@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QSize, QThread, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QPixmap
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QCheckBox, QGroupBox, QTabWidget, QListWidgetItem, QHBoxLayout,
     QLabel, QListWidget, QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
-    QTableWidget, QTableWidgetItem, QInputDialog, QVBoxLayout, QWidget, QHeaderView)
+    QTableWidget, QTableWidgetItem, QDialog, QInputDialog, QVBoxLayout, QWidget, QHeaderView)
 
 from . import VERSION
 from .client import CliError, device_view, plan_view
@@ -126,15 +126,20 @@ class Window(QMainWindow):
             self.market = self.create_market()
             self.pick_layout.addWidget(self.market, 2)
         if "help" in self.page_keys:
-            self.help_dialog = QMessageBox(self)
-            self.help_dialog.setStandardButtons(QMessageBox.StandardButton.Close)
-            self.help_dialog.addButton(self.button("查询操作结果", "Look up operation", self.lookup_operation),
-                                       QMessageBox.ButtonRole.ActionRole)
-            self.help_dialog.addButton(self.button("复制诊断信息", "Copy diagnostics", self.copy_diagnostics, "always"),
-                                       QMessageBox.ButtonRole.ActionRole)
+            self.help_dialog = QDialog(self)
+            self.help_dialog.setMinimumWidth(440)
+            help_layout = QVBoxLayout(self.help_dialog)
+            self.help_text = QLabel()
+            self.help_text.setWordWrap(True)
+            help_layout.addWidget(self.help_text)
+            help_actions = QHBoxLayout()
+            help_actions.addWidget(self.button("查询操作结果", "Look up operation", self.lookup_operation))
+            help_actions.addWidget(self.button("复制诊断信息", "Copy diagnostics", self.copy_diagnostics, "always"))
             if brand.get("help_url"):
-                self.help_dialog.addButton(self.button("帮助网页", "Help website",
-                    lambda: QDesktopServices.openUrl(QUrl(brand["help_url"])), "always"), QMessageBox.ButtonRole.ActionRole)
+                help_actions.addWidget(self.button("帮助网页", "Help website",
+                    lambda: QDesktopServices.openUrl(QUrl(brand["help_url"])), "always"))
+            help_actions.addWidget(self.button("关闭", "Close", self.help_dialog.accept, "always"))
+            help_layout.addLayout(help_actions)
             header.insertWidget(2, self.button("帮助", "Help", self.show_help, "always"))
         if not self.tab_names:
             help_page = QWidget()
@@ -279,7 +284,7 @@ class Window(QMainWindow):
 
     def show_help(self):
         self.help_dialog.setWindowTitle(self.tr2("帮助", "Help"))
-        self.help_dialog.setText(f"{self.brand['name']} {VERSION}  ·  CDM {self.client.version}\n\n" + self.tr2(
+        self.help_text.setText(f"{self.brand['name']} {VERSION}  ·  CDM {self.client.version}\n\n" + self.tr2(
             "选择设备后点击连接。在固件市场选择固件可查看安装预览。写入时请保持供电，结果未知时请重新查询设备。",
             "Select a device and connect. Choose firmware in the catalog to preview installation. Keep power connected during writes. Query the device again if the result is unknown."))
         self.help_dialog.exec()
@@ -595,11 +600,11 @@ class Window(QMainWindow):
 
     def lookup_operation(self):
         default = self.diagnostic.get("operation_id") or getattr(self.client, "last_operation_id", None) or ""
-        identifier, ok = QInputDialog.getText(self, self.tr2("查询操作结果", "Look up operation"),
+        identifier, ok = QInputDialog.getText(self.help_dialog, self.tr2("查询操作结果", "Look up operation"),
                                               self.tr2("操作编号", "Operation ID"), text=default)
         if ok and identifier.strip():
             self.start(lambda: self.client.operation(identifier.strip()), lambda state:
-                       QMessageBox.information(self, self.tr2("操作记录", "Operation record"),
+                       QMessageBox.information(self.help_dialog, self.tr2("操作记录", "Operation record"),
                        f"{identifier.strip()}\n{state}\n" + self.tr2("请刷新设备核对当前状态。", "Refresh the device to verify its current state.")))
 
     def change_mode(self):
