@@ -10,10 +10,10 @@ CANmeleon Device Manager is a Windows tool for connecting supported USB-CAN/CAN 
 
 | Package | Install |
 | --- | --- |
-| [Windows x64 installer](https://gitee.com/ChengDu-KunHong/canmeleon-device-manager/releases/download/latest/CANmeleon-device-manager-setup-x64.exe) | Run the installer and follow the setup wizard. |
-| [Windows x64 portable ZIP](https://gitee.com/ChengDu-KunHong/canmeleon-device-manager/releases/download/latest/CANmeleon-device-manager-win64.zip) | Extract the complete archive and run `CANmeleon-device-manager.exe`. |
+| [Windows x64 installer](https://gitee.com/canmeleon/canmeleon-device-manager/releases/download/latest/CANmeleon-device-manager-setup-x64.exe) | Run the installer and follow the setup wizard. |
+| [Windows x64 portable ZIP](https://gitee.com/canmeleon/canmeleon-device-manager/releases/download/latest/CANmeleon-device-manager-win64.zip) | Extract the complete archive and run `CANmeleon-device-manager.exe`. |
 
-[Software release notes](https://gitee.com/ChengDu-KunHong/canmeleon-device-manager/releases). The linked packages are hosted on Gitee. The illustrated user guide covers version **0.8.5**; device-manager versions and firmware-package versions are separate.
+[Software release notes](https://gitee.com/canmeleon/canmeleon-device-manager/releases). Packages are also available on [GitHub Releases](https://github.com/CANmeleon/canmeleon-device-manager/releases). The illustrated user guide covers version **0.8.5**; device-manager versions and firmware-package versions are separate.
 
 ## What you can do
 

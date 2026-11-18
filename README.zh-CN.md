@@ -10,10 +10,10 @@ CANmeleon 设备管理器用于在 Windows 上连接支持的 USB-CAN/CAN FD 设
 
 | 安装包 | 使用方式 |
 | --- | --- |
-| [Windows x64 安装程序](https://gitee.com/ChengDu-KunHong/canmeleon-device-manager/releases/download/latest/CANmeleon-device-manager-setup-x64.exe) | 运行程序并按安装向导完成安装。 |
-| [Windows x64 便携 ZIP](https://gitee.com/ChengDu-KunHong/canmeleon-device-manager/releases/download/latest/CANmeleon-device-manager-win64.zip) | 完整解压，运行 `CANmeleon-device-manager.exe`。 |
+| [Windows x64 安装程序](https://gitee.com/canmeleon/canmeleon-device-manager/releases/download/latest/CANmeleon-device-manager-setup-x64.exe) | 运行程序并按安装向导完成安装。 |
+| [Windows x64 便携 ZIP](https://gitee.com/canmeleon/canmeleon-device-manager/releases/download/latest/CANmeleon-device-manager-win64.zip) | 完整解压，运行 `CANmeleon-device-manager.exe`。 |
 
-[软件版本说明](https://gitee.com/ChengDu-KunHong/canmeleon-device-manager/releases)。以上下载托管于 Gitee。图文指南对应 **0.8.5**；管理器版本与设备固件包版本分别管理。
+[软件版本说明](https://gitee.com/canmeleon/canmeleon-device-manager/releases)。也可从 [GitHub Releases](https://github.com/CANmeleon/canmeleon-device-manager/releases) 下载。图文指南对应 **0.8.5**；管理器版本与设备固件包版本分别管理。
 
 ## 主要功能
 

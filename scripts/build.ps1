@@ -37,7 +37,8 @@ $lock = Get-Content -LiteralPath (Join-Path $RepoRoot 'cdm-runtime.lock.json') -
 $arguments = @('-m','nuitka','--standalone','--enable-plugin=pyside6','--assume-yes-for-downloads',
     '--windows-console-mode=disable','--output-filename=CDM_OEM.exe',"--output-dir=$compileOutput",
     "--windows-icon-from-ico=$(Join-Path $compileRoot ('oem\' + $brand.icon))",
-    "--product-name=$($brand.name)","--file-version=$($lock.version)","--product-version=$($lock.version)",
+    "--company-name=$($brand.publisher)","--product-name=$($brand.name)",
+    "--file-version=$($lock.version)","--product-version=$($lock.version)",
     (Join-Path $compileRoot 'oem_main.py'))
 & $compilePython @arguments
 if ($LASTEXITCODE -ne 0) { throw "Nuitka build failed. Compiler scratch directory: $stage" }

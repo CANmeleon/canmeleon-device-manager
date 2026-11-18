@@ -22,6 +22,7 @@ OutputBaseFilename=CANmeleon-OEM-demo-{#AppVersion}-setup-x64
 SetupIconFile={#IconPath}
 UninstallDisplayIcon={app}\CDM_OEM.exe
 VersionInfoVersion={#AppVersion}
+VersionInfoCompany={#Publisher}
 Compression=lzma2/ultra64
 SolidCompression=yes
 CloseApplications=no
