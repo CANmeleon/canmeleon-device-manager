@@ -428,7 +428,13 @@ class Window(QMainWindow):
     def refresh_catalog(self, checked=False, *, after=None):
         device = self.device
         def done(rows):
-            self.catalog_rows = rows
+            seen = set()
+            self.catalog_rows = []
+            for row in rows:
+                key = (row["id"], row["version"], row.get("sha256"), row["availability"])
+                if key not in seen:
+                    seen.add(key)
+                    self.catalog_rows.append(row)
             self.render_catalog()
             if after:
                 after()
@@ -439,6 +445,8 @@ class Window(QMainWindow):
         self.catalog.clear()
         for row in self.catalog_rows:
             item = QListWidgetItem(f"{row['name']}\n{row['version']}")
+            item.setSizeHint(QSize(174, 54))
+            item.setToolTip(f"{row['name']} · {row['version']}")
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.catalog.addItem(item)
         if self.catalog_rows:

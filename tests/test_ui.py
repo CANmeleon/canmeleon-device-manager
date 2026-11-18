@@ -148,3 +148,12 @@ def test_partial_channel_apply_stops_until_fresh_read(window, app, monkeypatch):
     assert window.uncertain
     window.set_termination()
     assert len(writes) == 2
+
+
+def test_catalog_merges_identical_import_but_keeps_versions(window, app, monkeypatch):
+    row = dict(window.catalog_rows[0], sha256='abc')
+    monkeypatch.setattr(window.client, 'catalog', lambda _: [row, dict(row), dict(row, version='8.15.1')])
+    window.refresh_catalog()
+    wait(app, lambda: window.job is None)
+    assert [f['version'] for f in window.catalog_rows] == ['8.15.2', '8.15.1']
+    assert window.catalog.count() == 2
