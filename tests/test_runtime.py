@@ -50,3 +50,18 @@ def test_download_fallback_and_partial_cleanup(tmp_path,monkeypatch):
     assert result.read_bytes()==content and len(calls)==2
     acquire(lock,root=tmp_path)
     assert len(calls)==2 and not list((tmp_path/'.cache').glob('*.partial'))
+
+def test_local_candidate_stages_beside_its_lock(tmp_path, monkeypatch):
+    candidate = tmp_path / 'candidate'
+    candidate.mkdir()
+    archive, lock = make_zip(candidate, 'package/CANmeleon-device-manager.exe')
+    lock_path = candidate / 'candidate.lock.json'
+    lock_path.write_text(json.dumps(lock))
+    monkeypatch.setattr('prepare_runtime.check_runtime', lambda *args: None)
+
+    prepare(archive, tmp_path, lock_path=lock_path)
+
+    assert (candidate / '.runtime/cdm/CANmeleon-device-manager.exe').is_file()
+    assert not (tmp_path / '.runtime').exists()
+    with pytest.raises(ValueError, match='requires its runtime archive'):
+        prepare(root=tmp_path, lock_path=lock_path)

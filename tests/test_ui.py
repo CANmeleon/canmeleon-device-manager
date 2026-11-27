@@ -98,6 +98,7 @@ def test_install_requires_preview_then_confirmation(window,app,monkeypatch,confi
 
 def test_write_timeout_never_retries(window,app,monkeypatch):
     window.read_device();wait(app,lambda:window.job is None)
+    window.tabs.setCurrentIndex(1);wait(app,lambda:window.job is None)
     calls=[]
     def termination(*args):
         calls.append(args)
@@ -130,6 +131,8 @@ def test_disconnect_clears_device_and_multidevice_requires_selection(window, app
 
 def test_partial_channel_apply_stops_until_fresh_read(window, app, monkeypatch):
     window.read_device()
+    wait(app, lambda: window.job is None)
+    window.tabs.setCurrentIndex(1)
     wait(app, lambda: window.job is None)
     writes = []
     def write(device, channel, uid=None, enabled=None):
@@ -226,3 +229,55 @@ def test_filters_and_hotplug_preserve_actual_targets(window, app, monkeypatch):
     assert window.selected_firmware()["version"] == "7" and not window.install_button.isEnabled()
     window.compatible.setChecked(True)
     assert not window.selected_firmware()
+
+
+def test_channels_load_on_first_info_tab_visit_even_during_another_job(window, app, monkeypatch):
+    calls = []
+    def read(device, channel):
+        calls.append(channel)
+        return {"channel": channel, "enabled": True}
+    monkeypatch.setattr(window.client, "termination", read)
+
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    assert calls == []
+    window.refresh_catalog()
+    window.tabs.setCurrentIndex(1)
+    wait(app, lambda: window.job is None)
+    assert calls == [1, 2] and window.term_states == {1: True, 2: True}
+
+    window.tabs.setCurrentIndex(0)
+    window.tabs.setCurrentIndex(1)
+    assert window.job is None
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    assert calls == [1, 2, 1, 2]
+
+
+def test_failed_channel_load_waits_for_explicit_refresh(window, app, monkeypatch):
+    calls = []
+    def unsupported(device, channel):
+        calls.append(channel)
+        raise CliError("UNSUPPORTED", "no termination support")
+    monkeypatch.setattr(window.client, "termination", unsupported)
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    window.tabs.setCurrentIndex(1)
+    wait(app, lambda: window.job is None)
+    window.tabs.setCurrentIndex(0)
+    window.tabs.setCurrentIndex(1)
+    assert calls == [1] and "UNSUPPORTED" in window.status.text()
+    window.get_termination()
+    wait(app, lambda: window.job is None)
+    assert calls == [1, 1]
+
+@pytest.mark.parametrize("node_name", ["CANmeleon GS USB CAN2", "USB Composite Device"])
+def test_composite_gs_usb_displays_physical_device_name(window, app, monkeypatch, node_name):
+    row = dict(id="usb", device_type="gs-usb", name=node_name, composite_nodes=["parent", "can1", "can2"])
+    monkeypatch.setattr(window.client, "devices", lambda: [row])
+    window.refresh_devices()
+    wait(app, lambda: window.job is None)
+    assert window.device_table.item(0, 0).text() == "GS USB"
+    window.read_device()
+    wait(app, lambda: window.job is None)
+    assert window.identity.text().startswith("GS USB    UID:")

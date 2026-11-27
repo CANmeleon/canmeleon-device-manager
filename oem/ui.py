@@ -18,6 +18,7 @@ ERROR_HELP = {
     "VERSION_MISMATCH": ("后端版本不匹配，请重新初始化或安装完整软件包。", "Runtime version mismatch. Run setup or reinstall the complete package."),
     "TARGET_NOT_FOUND": ("设备已断开，请刷新并重新选择。", "Device disconnected. Refresh and select it again."),
     "TARGET_AMBIGUOUS": ("无法唯一定位设备，请仅连接目标设备后刷新。", "Cannot identify one device. Connect only the target and refresh."),
+    "VECTOR_TARGET_UNVERIFIED": ("无法确认 Vector 设备的 USB 端口。请仅连接目标 Vector 设备，再刷新并重新连接。", "Cannot verify the Vector USB port. Leave only the intended Vector device connected, then refresh and reconnect."),
     "TARGET_MISMATCH": ("设备身份变化，已拒绝操作。请重新读取设备。", "Device identity changed. Operation refused. Read the device again."),
     "STALE_PLAN": ("设备或固件发生变化，请重新预览安装。", "Device or firmware changed. Preview the installation again."),
     "BUSY": ("设备正在使用，请断开原版 CDM 的连接或关闭占用软件后重试。", "Device is busy. Disconnect the original CDM or close the application using it."),
@@ -90,6 +91,7 @@ class Window(QMainWindow):
         self.page_keys = brand["pages"]
         self.device_rows = []
         self.term_states = {}
+        self.term_read_pending = False
         self.checks = {}
         self.flow = QStackedWidget()
         outer.addWidget(self.flow, 1)
@@ -121,6 +123,7 @@ class Window(QMainWindow):
             if key in self.page_keys:
                 self.tabs.addTab(getattr(self, "page_" + key)(), zh)
                 self.tab_names.append((zh, en))
+        self.tabs.currentChanged.connect(self.load_visible_termination)
         self.flow.addWidget(manager)
         if "firmware" in self.page_keys:
             self.market = self.create_market()
@@ -368,6 +371,7 @@ class Window(QMainWindow):
                     self.status.setText(self.tr2("操作完成", "Operation completed"))
                 try:
                     success(job.value)
+                    self.load_visible_termination()
                 except Exception as exc:
                     self.failed(exc, writing)
             self.update_actions()
@@ -404,6 +408,7 @@ class Window(QMainWindow):
             self.mode_choice.clear()
         self.catalog_rows = []
         self.channels = 0
+        self.term_read_pending = False
         self.term_states.clear()
         self.identity.clear()
         for box in self.checks.values():
@@ -417,14 +422,24 @@ class Window(QMainWindow):
         self.flow.setCurrentIndex(0)
         self.update_actions()
 
+    @staticmethod
+    def device_name(row):
+        if row.get("device_type") == "gs-usb" and len(row.get("composite_nodes") or []) > 1:
+            # Windows can return a channel label or the generic parent as the first node.
+            return row.get("product_name") or "GS USB"
+        return row.get("product_name") or row.get("name") or row["id"]
+
     def render_devices(self):
         self.device_table.setRowCount(len(self.device_rows))
         for index, row in enumerate(self.device_rows):
-            name = row.get("product_name") or row.get("name") or row["id"]
+            name = self.device_name(row)
             state = self.tr2("可连接", "Ready") if row.get("connectable", True) else self.tr2("不可连接", "Unavailable")
             for column, value in enumerate((name, row.get("usb_node_label") or row.get("location"), state,
                                             row.get("driver_version") or row.get("driver_status"))):
-                self.device_table.setItem(index, column, QTableWidgetItem(str(value or "—")))
+                item = QTableWidgetItem(str(value or "—"))
+                if column == 1 and row.get("location"):
+                    item.setToolTip(row["location"])
+                self.device_table.setItem(index, column, item)
 
     def refresh_devices(self):
         self.clear_session()
@@ -476,7 +491,7 @@ class Window(QMainWindow):
             self.firmware_rows = view["firmware"]
             self.empty_slots = data.get("empty_slots", [])
             self.max_slots = data.get("max_slots")
-            self.identity.setText(f"{row.get('name') or device}    UID: {self.uid}")
+            self.identity.setText(f"{self.device_name(row)}    UID: {self.uid}")
             self.flow.setCurrentIndex(1)
             self.tabs.setCurrentIndex(tab)
             if hasattr(self, "term_group"):
@@ -492,12 +507,11 @@ class Window(QMainWindow):
                     self.channel_layout.addWidget(box)
                     box.stateChanged.connect(self.update_actions)
                 self.term_status.clear()
+                self.term_read_pending = bool(self.checks)
             if hasattr(self, "market"):
                 self.firmware_layout.addWidget(self.market, 2)
                 self.render_firmware()
-                self.refresh_catalog(after=self.get_termination)
-            else:
-                self.get_termination()
+                self.refresh_catalog()
         self.start(lambda: self.client.info(device), done)
 
     def render_firmware(self):
@@ -516,7 +530,7 @@ class Window(QMainWindow):
         index = self.catalog.currentRow() if hasattr(self, "catalog") else -1
         return self.visible_catalog[index] if 0 <= index < len(self.visible_catalog) else None
 
-    def refresh_catalog(self, checked=False, *, after=None):
+    def refresh_catalog(self, checked=False):
         device = self.device
         def done(rows):
             seen = set()
@@ -528,8 +542,6 @@ class Window(QMainWindow):
                     self.catalog_rows.append(row)
             self.update_versions()
             self.render_catalog()
-            if after:
-                after()
         channel = self.release_channel
         self.start(lambda: self.client.catalog(device) if channel == "stable" else self.client.catalog(device, channel), done)
 
@@ -702,9 +714,15 @@ class Window(QMainWindow):
         if self.confirm(self.tr2("切换后设备会重新枚举。\n", "The device will reconnect after switching.\n") + f"UID: {uid}\n{row['name']} {row['version']}"):
             self.start(lambda: self.client.switch(device, uid, row["id"]), lambda _: self.read_device(), writing=True)
 
+    def load_visible_termination(self):
+        if (self.term_read_pending and self.job is None
+                and self.tabs.currentWidget().isAncestorOf(self.term_group)):
+            self.get_termination()
+
     def get_termination(self):
-        if not self.checks or not self.device:
+        if self.job is not None or not self.checks or not self.device:
             return
+        self.term_read_pending = False
         device = self.device
         channels = tuple(self.checks)
         self.term_states.clear()

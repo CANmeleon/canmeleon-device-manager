@@ -90,8 +90,12 @@ def acquire(lock, archive=None, root=ROOT):
     raise RuntimeError('\n'.join(errors))
 
 
-def prepare(archive=None, root=ROOT):
-    lock = json.loads((root / 'cdm-runtime.lock.json').read_text(encoding='utf-8'))
+def prepare(archive=None, root=ROOT, *, lock_path=None):
+    if lock_path is not None:
+        if archive is None:
+            raise ValueError('A local candidate lock requires its runtime archive')
+        root = lock_path.resolve().parent
+    lock = json.loads((lock_path or root / 'cdm-runtime.lock.json').read_text(encoding='utf-8'))
     path = acquire(lock, archive, root)
     runtime = (root / '.runtime').resolve()
     runtime.mkdir(exist_ok=True)
@@ -125,4 +129,6 @@ def prepare(archive=None, root=ROOT):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--archive', type=Path)
-    prepare(parser.parse_args().archive)
+    parser.add_argument('--lock', type=Path)
+    args = parser.parse_args()
+    prepare(args.archive, lock_path=args.lock)

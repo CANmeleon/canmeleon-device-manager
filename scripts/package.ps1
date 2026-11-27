@@ -35,7 +35,7 @@ if ($compilerVersion -notlike '6.7.3*') { throw "Expected Inno Setup 6.7.3, foun
 if (-not $OutputDir) { $OutputDir = Join-Path $RepoRoot 'dist' }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $brand = Get-Content -LiteralPath (Join-Path $RepoRoot 'oem\branding.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$lock = Get-Content -LiteralPath (Join-Path $RepoRoot 'cdm-runtime.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$lock = Get-Content -LiteralPath (Join-Path $PackageDir 'cdm-runtime.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 foreach ($value in @($brand.name,$brand.publisher,$brand.product_id,$brand.app_id)) {
     if ($value -match '["\r\n]') { throw 'Invalid installer branding text.' }
 }

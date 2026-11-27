@@ -7,6 +7,9 @@ import subprocess
 from pathlib import Path
 
 
+from .vector_target import matches_vector_port, present_vector_nodes
+
+
 class CliError(RuntimeError):
     def __init__(self, code: str, message: str, operation_id=None):
         super().__init__(message)
@@ -44,6 +47,8 @@ class Client:
     def call(self, args: list[str], *, writing=False, timeout=300, online=False, expected_completion="verified") -> dict:
         if not self.exe.is_file():
             raise CliError("RUNTIME_MISSING", "Run scripts/setup.ps1 or reinstall this product.")
+        if "--device" in args and args[:2] != ["firmware", "catalog"]:
+            self._check_target(args[args.index("--device") + 1])
         command = [str(self.exe), *map(str, args), "--json", "--cache-dir", str(self.cache),
                    "--timeout", str(timeout), "--wait", "90"]
         command.append("--verified-https" if online else "--offline")
@@ -67,6 +72,22 @@ class Client:
 
     def devices(self):
         return self.call(["devices", "list"])["devices"]
+
+    def _check_target(self, identifier):
+        rows = [row for row in self.devices() if row.get("id") == identifier]
+        if not rows:
+            raise CliError("TARGET_NOT_FOUND", "The selected device is no longer present.")
+        if len(rows) != 1:
+            raise CliError("TARGET_AMBIGUOUS", "The selected device ID is not unique.")
+        target = rows[0]
+        if not str(target.get("backend", "")).casefold().startswith("xlapi"):
+            return
+        try:
+            nodes = present_vector_nodes()
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+            raise CliError("VECTOR_TARGET_UNVERIFIED", "Cannot enumerate present Vector USB devices.") from exc
+        if not matches_vector_port(target, nodes):
+            raise CliError("VECTOR_TARGET_UNVERIFIED", "Cannot bind the selected Vector target to one USB port.")
 
     def info(self, device):
         return self.call(["device", "info", "--device", device])

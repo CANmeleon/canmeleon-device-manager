@@ -25,6 +25,14 @@ Setup prepares project-local Python 3.12.10, a virtual environment and locked de
 
 The local ZIP must match the runtime lock. This replaces only the CDM download; Python/development dependencies may still need network access. Setup is repeatable. `-EnvironmentOnly` prepares development tools without the runtime, for maintainers before the formal backend candidate exists.
 
+测试独立的本地候选运行时，将其锁文件与 ZIP 放在专用目录，运行以下命令。构建会验证候选包的 SHA-256、版本和 CLI schema，并将该锁文件随程序分发。常规构建继续使用仓库中的发布版锁文件。
+
+To test a local runtime candidate, keep its lock file and archive in a dedicated directory. This build verifies the archive hash, version and CLI schema, and bundles the candidate lock. The default build uses the published runtime lock.
+
+```powershell
+.\scripts\build.ps1 -RuntimeLock '.cache\gsusb-candidate\cdm-runtime.lock.json' -RuntimeZip '.cache\gsusb-candidate\CANmeleon-device-manager-0.9.0.3-win64.zip'
+```
+
 ## 定制 / Customization
 
 - `oem/branding.json`：名称、主题色、Logo、图标、帮助网址、页面列表。帮助网址设为空可隐藏链接。`pages` 支持 `devices`、`firmware`、`help`。
@@ -73,9 +81,13 @@ The picker refreshes every five seconds while idle. Filter by version and compat
 4. 写入时保持供电与 USB 连接。超时或未知结果先刷新读取，不自动重试。/ Keep USB and power connected. Query state after timeout/unknown outcome; never retry automatically.
 5. 占用时先断开原版 CDM 的设备连接或释放其他软件。空间不足、恢复模式、V2 和复杂布局请使用原版支持流程。/ Release other applications when busy. Use supported original-CDM workflows for insufficient space, recovery and complex layouts; this demo does not claim V2 support.
 
-核心提示可离线查看。网络失败不影响已准备好的本地操作。设置终端电阻后后端会回读；不支持不等于关闭。诊断复制包括版本、错误码和设备 UID，请在对外发送前检查隐私信息。
+使用 Vector XL 后端安装固件时，请仅连接目标 Vector 设备。多台设备共用驱动时，CDM 0.9.0 返回的设备名称和物理端口可能与实际应答的设备不一致。出现 `VECTOR_TARGET_UNVERIFIED` 后，断开其他 Vector 设备，刷新并重新连接目标。升级盘已出现且上次结果未知时，请先核查操作记录和设备状态。
 
-Core guidance works offline. Network failures do not disable prepared local workflows. Termination is read back after writes; unsupported does not mean disabled. Diagnostics include versions, error codes and device UID; review them before sharing.
+For firmware installation through Vector XL, connect only the intended Vector device. With multiple adapters sharing the driver, CDM 0.9.0 can associate the responding device with a different name and physical port. After `VECTOR_TARGET_UNVERIFIED`, disconnect the other Vector adapters, refresh, and reconnect the target. If an updater volume is already mounted after an unknown outcome, check the operation record and device state first.
+
+核心提示可离线查看。网络失败不影响已准备好的本地操作。打开“设备信息”页时读取各通道的终端电阻状态。设置终端电阻后后端会回读；不支持不等于关闭。诊断复制包括版本、错误码和设备 UID，请在对外发送前检查隐私信息。
+
+Core guidance works offline. Network failures do not disable prepared local workflows. Opening Device information loads the termination states for each channel. Termination is read back after writes; unsupported does not mean disabled. Diagnostics include versions, error codes and device UID; review them before sharing.
 
 ## 验证范围 / Validation scope
 

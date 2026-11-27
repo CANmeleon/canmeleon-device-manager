@@ -42,6 +42,7 @@ def test_execution_is_bound_and_uses_argument_array(tmp_path,monkeypatch):
         return SimpleNamespace(stdout=envelope({'completion':'verified'}),returncode=0)
     monkeypatch.setattr('oem.client.subprocess.run',run)
     client=Client(exe,tmp_path/'cache','0.8.6')
+    monkeypatch.setattr(client, 'devices', lambda: [{'id': 'dev', 'backend': 'pcan'}])
     client.install('dev','UID','fw','8.15.2','plan')
     args,options=calls[0]
     for token in ['--expect-uid','UID','--plan-id','plan','--yes','--offline']:assert token in args
@@ -64,6 +65,7 @@ def test_networking_is_explicit_and_pins_download_version(tmp_path, monkeypatch)
         return SimpleNamespace(stdout=envelope({}), returncode=0)
     monkeypatch.setattr("oem.client.subprocess.run", run)
     client = Client(exe, tmp_path, "0.8.6")
+    monkeypatch.setattr(client, "devices", lambda: [{"id": "d", "backend": "pcan"}])
     client.info("d")
     client.check_online("beta")
     client.download("stable", "8.15.2")
@@ -114,3 +116,60 @@ def test_preview_must_match_selection(changed,tmp_path,monkeypatch):
     plan.update(changed)
     monkeypatch.setattr(client,'call',lambda *a,**k:dict(completion='preview',plan=plan))
     with pytest.raises(CliError):client.install('dev','UID','gs-usb','8.15.2')
+
+VECTOR_PORT = "PCIROOT(0)#PCI(0801)#PCI(0004)#USBROOT(0)#USB(2)"
+VECTOR_ID = r"USB\VID_1248&PID_1071\SERIAL"
+VECTOR_DEVICE = dict(id="selected", backend="xlapi/python-can", usb_node=VECTOR_ID,
+                     location=f"{VECTOR_PORT}; ACPI(TEST)")
+VECTOR_NODE = dict(id=VECTOR_ID, paths=["ACPI(TEST)", VECTOR_PORT])
+
+
+@pytest.mark.parametrize("nodes", [
+    [], [VECTOR_NODE, dict(id="second", paths=[])],
+    [dict(id=VECTOR_ID, paths=[VECTOR_PORT.replace("PCI(0004)", "PCI(0003)")])],
+    [dict(id="different", paths=[VECTOR_PORT])], [dict(id=VECTOR_ID, paths=[])],
+])
+def test_vector_target_requires_one_matching_physical_port(tmp_path, monkeypatch, nodes):
+    exe = tmp_path / "cdm.exe"
+    exe.touch()
+    client = Client(exe, tmp_path, "0.9.0")
+    monkeypatch.setattr(client, "devices", lambda: [VECTOR_DEVICE])
+    monkeypatch.setattr("oem.client.present_vector_nodes", lambda: nodes)
+    monkeypatch.setattr("oem.client.subprocess.run", lambda *a, **kw: pytest.fail("command sent"))
+    with pytest.raises(CliError) as error:
+        client.info("selected")
+    assert error.value.code == "VECTOR_TARGET_UNVERIFIED"
+
+
+def test_vector_install_rechecks_after_preview(tmp_path, monkeypatch):
+    exe = tmp_path / "cdm.exe"
+    exe.touch()
+    client = Client(exe, tmp_path, "0.9.0")
+    monkeypatch.setattr(client, "devices", lambda: [VECTOR_DEVICE])
+    snapshots = iter([[VECTOR_NODE], [VECTOR_NODE, dict(id="second", paths=[])]])
+    monkeypatch.setattr("oem.client.present_vector_nodes", lambda: next(snapshots))
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        plan = dict(device="selected", uid="uid", firmware="fw", version="v", plan_id="a"*64,
+                    size_bytes=1024, preserve_other_firmware=True, firmware_version="v", name="Firmware")
+        return SimpleNamespace(stdout=envelope(dict(completion="preview", plan=plan)), returncode=0)
+    monkeypatch.setattr("oem.client.subprocess.run", run)
+    plan = client.install("selected", "uid", "fw", "v")["plan"]
+    with pytest.raises(CliError) as error:
+        client.install("selected", "uid", "fw", "v", plan["plan_id"])
+    assert error.value.code == "VECTOR_TARGET_UNVERIFIED"
+    assert len(calls) == 1 and "--dry-run" in calls[0]
+
+
+def test_vector_inventory_failure_blocks_write(tmp_path, monkeypatch):
+    exe = tmp_path / "cdm.exe"
+    exe.touch()
+    client = Client(exe, tmp_path, "0.9.0")
+    monkeypatch.setattr(client, "devices", lambda: [VECTOR_DEVICE])
+    def denied():
+        raise PermissionError("denied")
+    monkeypatch.setattr("oem.client.present_vector_nodes", denied)
+    with pytest.raises(CliError) as error:
+        client.set_mode("selected", "uid", "mode")
+    assert error.value.code == "VECTOR_TARGET_UNVERIFIED"

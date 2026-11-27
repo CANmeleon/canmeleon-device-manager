@@ -1,8 +1,17 @@
 [CmdletBinding()]
-param([string]$RuntimeZip = '')
+param([string]$RuntimeZip = '', [string]$RuntimeLock = '')
 . (Join-Path $PSScriptRoot 'common.ps1')
 if (-not (Test-Path -LiteralPath $VenvPython)) { throw 'Run scripts/setup.ps1 first.' }
 $prepare = @((Join-Path $PSScriptRoot 'prepare_runtime.py'))
+$runtimeRoot = $RepoRoot
+$lockPath = Join-Path $RepoRoot 'cdm-runtime.lock.json'
+if ($RuntimeLock) {
+    if (-not $RuntimeZip) { throw 'Pass -RuntimeZip with the candidate runtime lock.' }
+    $lockPath = (Resolve-Path -LiteralPath $RuntimeLock).Path
+    $runtimeRoot = Split-Path -Parent $lockPath
+    if ($runtimeRoot -eq $RepoRoot) { throw 'Keep the candidate lock and staging directory outside the release runtime directory.' }
+    $prepare += @('--lock', $lockPath)
+}
 if ($RuntimeZip) { $prepare += @('--archive',([IO.Path]::GetFullPath($RuntimeZip))) }
 Invoke-CheckedPython $prepare
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -33,7 +42,7 @@ if ($RepoRoot -match '[^\x00-\x7F]') {
     $compilePython = Join-Path $stage '.venv\Scripts\python.exe'
 }
 $brand = Get-Content -LiteralPath (Join-Path $RepoRoot 'oem\branding.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$lock = Get-Content -LiteralPath (Join-Path $RepoRoot 'cdm-runtime.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$lock = Get-Content -LiteralPath $lockPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $arguments = @('-m','nuitka','--standalone','--enable-plugin=pyside6','--assume-yes-for-downloads',
     '--windows-console-mode=disable','--output-filename=CDM_OEM.exe',"--output-dir=$compileOutput",
     "--windows-icon-from-ico=$(Join-Path $compileRoot ('oem\' + $brand.icon))",
@@ -57,8 +66,8 @@ foreach ($asset in @('branding.json',$brand.logo,$brand.icon)) {
     New-Item -ItemType Directory -Force (Split-Path -Parent $assetTarget) | Out-Null
     Copy-Item -LiteralPath (Join-Path $RepoRoot ('oem\' + $asset)) -Destination $assetTarget
 }
-Copy-Item -LiteralPath (Join-Path $RepoRoot 'cdm-runtime.lock.json') -Destination $package
-Copy-Item -LiteralPath (Join-Path $RepoRoot '.runtime\cdm') -Destination (Join-Path $package 'runtime\cdm') -Recurse
+Copy-Item -LiteralPath $lockPath -Destination (Join-Path $package 'cdm-runtime.lock.json')
+Copy-Item -LiteralPath (Join-Path $runtimeRoot '.runtime\cdm') -Destination (Join-Path $package 'runtime\cdm') -Recurse
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'LICENSE'),(Join-Path $RepoRoot 'THIRD_PARTY_NOTICES.md') -Destination $package
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'docs') -Destination (Join-Path $package 'docs') -Recurse
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'licenses') -Destination (Join-Path $package 'licenses') -Recurse
